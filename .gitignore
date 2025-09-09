@@ -1,0 +1,38 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# Virtualenvs
+venv/
+env/
+*.egg-info/
+
+# Byte-compiled / caches
+*.egg
+.build/
+dist/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+thumbs.db
+
+# node / build
+node_modules/
+public/js/bundles/
+public/css/bundles/
+build/
+tmp/
+
+# bench / frappe specific
+*.log
+*.sqlite3
+*.db
+local.conf
+site_config.json
+*.pem
