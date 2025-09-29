@@ -1,6 +1,14 @@
 [pre_model_sync]
 # Patches added in this section will be executed before doctypes are migrated
 # Read docs to understand patches: https://frappeframework.com/docs/v14/user/en/database-migrations
+devp_custom.patches.add_manual_amount
+devp_custom.patches.add_licence_number
+devp_custom.patches.add_licence_number_supplier
+devp_custom.patches.add_description_sales_invoice
+devp_custom.patches.add_batch_size_to_batch
+devp_custom.patches.v1_0.disable_item_quick_entry
+devp_custom.patches.v1_0.add_batch_dates_to_sii
+
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated

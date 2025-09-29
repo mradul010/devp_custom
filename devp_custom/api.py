@@ -225,3 +225,136 @@ def auto_set_item_code_on_submit(doc, method):
     # Use the atomic reserve-and-write function
     reserve_and_set_item_code_for_item(doc.name, item_group=item_group, digits=3, max_prefix_levels=3)
 
+
+def assign_item_code_before_insert(doc, method=None):
+    """
+    Ensure item_code exists at insert time (Save).
+    Uses existing reserve_item_code() to get a unique, atomic series value.
+    """
+    # if user/client already set one (preview or manual), keep it
+    if (doc.item_code or "").strip():
+        return
+
+    if not getattr(doc, "item_group", None):
+        frappe.throw(_("Item Group is required to generate Item Code"))
+
+    # Reserve a unique code (atomic via tabSeries)
+    code = reserve_item_code(
+        item_group=doc.item_group,
+        digits=3,
+        max_prefix_levels=3
+    )
+    doc.item_code = code
+    # If your site uses autoname = field:item_code (recommended), name will follow automatically.
+    # If not, uncomment to force:
+    # doc.name = code
+
+@frappe.whitelist()
+def get_last_item_prices(item_code, customer=None, limit=5, include_other_customers=False):
+    """
+    Return last `limit` selling prices for given item_code.
+    - If `customer` provided and include_other_customers = False: fetch only for that customer.
+    - If include_other_customers = True: fetch for other customers (exclude given customer).
+    - If no customer: fetch across all customers.
+    """
+    if not item_code:
+        return []
+
+    # normalize params
+    limit = int(limit or 5)
+    if not customer:
+        customer = None
+    if isinstance(customer, str) and customer.lower() in ("null", "none", ""):
+        customer = None
+
+    include_other = True if str(include_other_customers).lower() in ("1", "true", "yes") else False
+
+    if not frappe.has_permission("Sales Invoice", ptype="read"):
+        frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+    filters = ["sii.item_code = %s", "si.docstatus = 1"]
+    params = [item_code]
+
+    if customer:
+        if include_other:
+            filters.append("si.customer != %s")
+            params.append(customer)
+        else:
+            filters.append("si.customer = %s")
+            params.append(customer)
+
+    where = " AND ".join(filters)
+
+    query = f"""
+        SELECT
+            si.name AS invoice,
+            si.posting_date AS posting_date,
+            sii.rate AS rate,
+            si.customer AS customer
+        FROM `tabSales Invoice Item` sii
+        JOIN `tabSales Invoice` si ON si.name = sii.parent
+        WHERE {where}
+        ORDER BY si.posting_date DESC, si.modified DESC
+        LIMIT %s
+    """
+    params.append(limit)
+
+    rows = frappe.db.sql(query, tuple(params), as_dict=1)
+
+    # format response
+    result = []
+    for r in rows:
+        result.append({
+            "invoice": r.get("invoice"),
+            "posting_date": r.get("posting_date").strftime("%Y-%m-%d") if r.get("posting_date") else None,
+            "rate": float(r.get("rate")) if r.get("rate") is not None else None,
+            "customer": r.get("customer") or ""
+        })
+    return result
+
+
+def _get_batch_size(batch_name):
+    """Return float or None"""
+    if not batch_name:
+        return None
+    res = frappe.db.get_value("Batch", batch_name, "batch_size")
+    try:
+        return float(res) if res is not None else None
+    except:
+        return None
+
+# python (example)
+def validate_work_order_batch_size(doc, method=None):
+    for row in (doc.get("items") or []):
+        # or use parent qty fields depending on your logic
+        pass
+
+    qty = doc.get("production_qty") or doc.get("qty") or 0
+    batch = doc.get("production_batch") or doc.get("batch_no") or doc.get("batch")
+    if batch:
+        batch_size = frappe.db.get_value("Batch", batch, "batch_size")
+        if batch_size and float(qty) > float(batch_size):
+            if not doc.get("allow_batch_exceed"):
+                frappe.throw(f"Qty ({qty}) exceeds Batch '{batch}' size ({batch_size}).")
+            else:
+                frappe.msgprint(f"Override used: qty ({qty}) > batch_size ({batch_size})", indicator="orange")
+
+def _get_batch_size(batch_no):
+    return frappe.db.get_value("Batch", batch_no, "batch_size")
+
+def validate_sales_invoice_batch_size(doc, method=None):
+    """
+    Non-blocking: warn if any child row qty exceeds batch_size.
+    This will NOT stop save.
+    """
+    for row in doc.get("items") or []:
+        batch_no = row.get("batch_no") or row.get("batch")
+        qty = row.get("qty") or 0
+        if batch_no:
+            batch_size = _get_batch_size(batch_no)
+            if batch_size is not None and float(qty) > float(batch_size):
+                frappe.msgprint(
+                    f"⚠️ Sales Invoice line for item {row.get('item_code') or ''}: "
+                    f"qty ({qty}) exceeds Batch '{batch_no}' size ({batch_size}).",
+                    indicator="orange"
+                )
