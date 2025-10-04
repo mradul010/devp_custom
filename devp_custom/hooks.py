@@ -13,12 +13,20 @@ fixtures = ["Custom Field"]
 # apps/devp_custom/hooks.py
 doctype_js = {
     "Item": "public/js/item_client.js",
-    "Sales Order": "public/js/sales_order_item.js",
-    "Quotation": "public/js/quotation_item_last_prices.js",
+    "Sales Order": [
+        "public/js/sales_order_item.js",
+        "public/js/mapping_on_rate_change.js"
+    ],
+    "Quotation": [
+        "public/js/quotation_item_last_prices.js",
+        "public/js/mapping_on_rate_change.js",
+    ],
     "Sales Invoice": [
         "public/js/sales_invoice_item.js",
-        "public/js/sales_invoice_batch_dates.js"
-    ]
+        "public/js/sales_invoice_batch_dates.js",
+        "public/js/mapping_on_rate_change.js",
+    ],
+    
 }
 
 
@@ -38,6 +46,16 @@ doc_events = {
     "Sales Invoice": {
         "validate": "devp_custom.api.validate_sales_invoice_batch_size"
     },
+    "Sales Order": {
+        "before_save": "devp_custom.api.apply_customer_item_names"
+    },
+    "Quotation": {
+        "before_save": "devp_custom.api.apply_customer_item_names"
+    },
+    "Sales Invoice": {
+        "before_save": "devp_custom.api.apply_customer_item_names"
+    }
+    
 }
 
 app_include_js = [

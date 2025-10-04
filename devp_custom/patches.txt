@@ -8,6 +8,8 @@ devp_custom.patches.add_description_sales_invoice
 devp_custom.patches.add_batch_size_to_batch
 devp_custom.patches.v1_0.disable_item_quick_entry
 devp_custom.patches.v1_0.add_batch_dates_to_sii
+devp_custom.patches.add_transaction_and_item_fields
+devp_custom.patches.create_transaction_custom_fields
 
 
 [post_model_sync]

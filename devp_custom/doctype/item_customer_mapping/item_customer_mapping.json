@@ -1,0 +1,22 @@
+{
+  "doctype": "DocType",
+  "name": "Item Customer Mapping",
+  "module": "Custom",
+  "custom": 0,
+  "is_table": 0,
+  "fields": [
+    { "fieldname": "item", "fieldtype": "Link", "label": "Item", "options": "Item", "reqd": 1, "in_list_view": 1 },
+    { "fieldname": "customer", "fieldtype": "Link", "label": "Customer", "options": "Customer", "in_list_view": 1 },
+    { "fieldname": "customer_group", "fieldtype": "Link", "label": "Customer Group", "options": "Customer Group", "in_list_view": 1 },
+    { "fieldname": "customer_item_name", "fieldtype": "Data", "label": "Customer Item Name", "in_list_view": 1 },
+    { "fieldname": "customer_description", "fieldtype": "Text", "label": "Customer Description" },
+    { "fieldname": "effective_from", "fieldtype": "Datetime", "label": "Effective From", "in_list_view": 0 },
+    { "fieldname": "is_active", "fieldtype": "Check", "label": "Is Active", "default": 1 },
+    { "fieldname": "priority", "fieldtype": "Int", "label": "Priority", "description": "Lower number = higher priority" }
+  ],
+  "permissions": [
+    { "role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1 }
+  ],
+  "autoname": "hash",
+  "engine": "InnoDB"
+}
