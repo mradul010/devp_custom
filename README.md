@@ -1,33 +1,22 @@
-### Devp Custom
+# DevP Custom App for ERPNext
 
-Devp Custom
+**DevP Custom** is a custom ERPNext extension developed for **DevParv Surgico** by **Techsolvo LLP**.  
+It enhances ERPNext’s Selling and Item modules with:
 
-### Installation
+- 🔹 **Customer-Specific Item Mapping** – Assign unique item names & descriptions for each customer.  
+- 🔹 **Last 5 Selling Price Lookup** – Show the customer’s last selling rates while creating a transaction.  
+- 🔹 **Unified Transaction Flow** – When an item is selected, you can pick a previous rate and auto-apply customer-specific item details.
 
-You can install this app using the [bench](https://github.com/frappe/bench) CLI:
+---
 
-```bash
-cd $PATH_TO_YOUR_BENCH
-bench get-app $URL_OF_THIS_REPO --branch develop
-bench install-app devp_custom
-```
+## ⚙️ Installation
 
-### Contributing
-
-This app uses `pre-commit` for code formatting and linting. Please [install pre-commit](https://pre-commit.com/#installation) and enable it for this repository:
+Run these commands one after another in your bench directory:
 
 ```bash
-cd apps/devp_custom
-pre-commit install
-```
-
-Pre-commit is configured to use the following tools for checking and formatting your code:
-
-- ruff
-- eslint
-- prettier
-- pyupgrade
-
-### License
-
-mit
+bench get-app https://github.com/mradul010/devp_custom --branch main
+bench --site devparv11 install-app devp_custom
+bench --site devparv11 migrate
+bench build
+bench clear-cache
+bench restart
