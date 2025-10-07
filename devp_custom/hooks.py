@@ -8,7 +8,16 @@ app_description = "Devp Custom"
 app_email = "mradulmishra010@gmail.com"
 app_license = "mit"
 
-fixtures = ["Custom Field"]
+fixtures = [
+    # ship your custom doctypes
+    {"dt": "DocType", "filters": [["name", "in", ["Item Customer Info", "Item Customer Mapping"]]]},
+    # ship their permissions, if any
+    {"dt": "Custom DocPerm", "filters": [["parent", "in", ["Item Customer Info", "Item Customer Mapping"]]]},
+    # ship their fields if they’re custom on standard doctypes
+    "Custom Field",
+    # ship your client scripts if you rely on them
+    "Client Script",
+]
 
 # ---------------------------------------------------------------------
 # Client Scripts
