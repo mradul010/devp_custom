@@ -7,6 +7,7 @@ from collections import defaultdict
 import frappe
 from frappe import _
 from frappe.utils import now_datetime, get_datetime
+from frappe.utils import cint
 
 # ---------------------------------------------------------------------
 # Helpers: item-code generation
@@ -275,12 +276,17 @@ def validate_sales_invoice_batch_size(doc, method=None):
         if batch_no:
             batch_size = _get_batch_size(batch_no)
             if batch_size is not None and float(qty) > float(batch_size):
-                frappe.msgprint(
-                    f"⚠️ Sales Invoice line for item {row.get('item_code') or ''}: "
-                    f"qty ({qty}) exceeds Batch '{batch_no}' size ({batch_size}).",
-                    indicator="orange",
-                )
+                pass
+                # frappe.msgprint(
+                #     f"⚠️ Sales Invoice line for item {row.get('item_code') or ''}: "
+                #     f"qty ({qty}) exceeds Batch '{batch_no}' size ({batch_size}).",
+                #     indicator="orange",
+                # )
 
+def clear_allow_override_after_submit(doc, method=None):
+    if cint(doc.allow_batch_exceed) == 1:
+        # direct DB write avoids triggering recursive events
+        frappe.db.set_value('Sales Invoice', doc.name, 'allow_batch_exceed', 0)
 # ---------------------------------------------------------------------
 # Customer Item Name/Description mapping
 # ---------------------------------------------------------------------
@@ -485,37 +491,122 @@ def validate_available_qty(doc, method=None):
         #     title=_("Insufficient Available Batch Quantity"),
         # )
 
+def _get_row_batch_no(row):
+    # Works for dict-like rows and object-like rows
+    if not row:
+        return None
+    return (row.get("batch_no") if isinstance(row, dict) else getattr(row, "batch_no", None)) \
+        or (row.get("batch") if isinstance(row, dict) else getattr(row, "batch", None))
+
+def _get_row_qty(row):
+    # Adjust if you have conversions (uom, stock_qty) — here we fall back to qty
+    if not row:
+        return 0.0
+    qty = row.get("qty") if isinstance(row, dict) else getattr(row, "qty", None)
+    try:
+        return float(qty or 0.0)
+    except (ValueError, TypeError):
+        return 0.0
+
+def _aggregate_batch_quantities(items):
+    agg = {}
+    for row in items or []:
+        bno = _get_row_batch_no(row)
+        if not bno:
+            continue
+        qty = _get_row_qty(row)
+        if qty <= 0:
+            continue
+        agg[bno] = agg.get(bno, 0.0) + qty
+    return agg
+
+def _fetch_batch_avails(batch_names):
+    """
+    Returns dict { batch_name: available_batch_qty_as_float }.
+    Raises if batch not found.
+    """
+    if not batch_names:
+        return {}
+    rows = frappe.get_all(
+        "Batch",
+        filters={"name": ["in", list(batch_names)]},
+        fields=["name", "available_batch_qty"],
+    )
+    avails = {}
+    for r in rows:
+        try:
+            avails[r.name] = float(r.available_batch_qty or 0.0)
+        except (ValueError, TypeError):
+            # treat invalid stored value as 0 but log a warning
+            frappe.log_error(
+                message=f"Batch {r.name} has invalid available_batch_qty: {r.available_batch_qty}. Treating as 0.",
+                title="Invalid available_batch_qty"
+            )
+            avails[r.name] = 0.0
+
+    # detect missing batches
+    missing = set(batch_names) - set(avails.keys())
+    if missing:
+        frappe.throw(_("Batch(es) not found: {0}").format(", ".join(sorted(missing))))
+
+    return avails
+
 def _apply_available_qty(doc, sign):
     """
     sign = -1 on submit (consume), +1 on cancel (revert).
-    Guarded update to avoid negative values.
+    Aggregates per-batch, checks for negative availability and updates atomically.
     """
-    if not _is_stock_affecting(doc):
+    # Optional: if you have a function _is_stock_affecting(doc), use it; otherwise assume True
+    try:
+        is_stock = _is_stock_affecting(doc)
+        if not is_stock:
+            return
+    except NameError:
+        # fallback if helper not present
+        pass
+
+    # support doc as dict-like or object-like
+    items = doc.get("items") if isinstance(doc, dict) else getattr(doc, "items", None)
+    batch_qty_map = _aggregate_batch_quantities(items)
+    print(batch_qty_map)
+
+    if not batch_qty_map:
         return
 
-    for it in (doc.items or []):
-        bno = getattr(it, "batch_no", None)
-        if not bno:
-            continue
-        qty = _row_stock_qty(it)
-        if qty <= 0:
-            continue
+    # allow override flag on the document (optional)
+    allow_exceed = False
+    if isinstance(doc, dict):
+        allow_exceed = bool(doc.get("allow_batch_exceed"))
+    else:
+        allow_exceed = bool(getattr(doc, "allow_batch_exceed", False))
 
-        delta = sign * qty  # submit: -qty ; cancel: +qty
-        avail = frappe.db.get_value("Batch", bno, "available_batch_qty") or 0
-        new_val = float(avail) + float(delta)
-        
+    # fetch current avails
+    batch_names = list(batch_qty_map.keys())
+    avails = _fetch_batch_avails(batch_names)
 
-        frappe.db.sql(
-            """
-            UPDATE `tabBatch`
-            SET available_batch_qty = COALESCE(available_batch_qty, 0) + %s
-            WHERE name = %s
-            """,
-            (delta, bno),
-        )
+    # compute new values and validate
+    new_values = {}
+    for bno, qty in batch_qty_map.items():
+        current = avails.get(bno, 0.0)
+        new_val = float(current) + float(sign) * float(qty)
+        if new_val < 0 and not allow_exceed:
+            frappe.throw(_(
+                "Insufficient available_batch_qty for Batch '{0}'. Available: {1}, Required change: {2}."
+            ).format(bno, current, -sign * qty))
+        # if you prefer to clamp at 0 instead of allowing negative, uncomment:
+        # new_val = max(0.0, new_val)
+        new_values[bno] = new_val
+
+    # persist updates
+    for bno, val in new_values.items():
+        # set_value will write the final float; this avoids incremental race conditions
+        frappe.db.set_value("Batch", bno, "available_batch_qty", val, update_modified=False)
+
+    # option: clear cached docs so subsequent reads get fresh values
+    frappe.local.cache().delete_value("doctype_batch_avails") if hasattr(frappe.local, "cache") else None
 
 def consume_available_qty(doc, method=None):
+    print("I am inside consume available qty")
     _apply_available_qty(doc, sign=-1)
 
 def revert_available_qty(doc, method=None):

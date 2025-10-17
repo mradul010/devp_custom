@@ -18,7 +18,7 @@ function get_batch_size_sync(batch_no) {
 }
 function ensure_row_limit(row) {
     let lim = (row.batch_size_limit != null && row.batch_size_limit !== "") ? flt(row.batch_size_limit) : null;
-    if (!lim && row.batch_no) lim = get_batch_size_sync(row.batch_no);
+    if (lim == null && row.batch_no) lim = get_batch_size_sync(row.batch_no);
     return lim;
 }
 (function inject_custom_css_once() {
@@ -44,20 +44,23 @@ function ensure_row_limit(row) {
     document.head.appendChild(style);
 })();
 
-// --- main ---
+// --- main upgrade: always check on save, single-use client override ---
 frappe.ui.form.on('Sales Invoice', {
     validate: function(frm) {
-        const allow_override = cint(frm.doc.allow_batch_exceed) === 1;
+        // Use a client-only temporary override (not persisted)
+        const allow_override = frm._temp_allow_batch_exceed === true;
+
         const violations = [];
 
         (frm.doc.items || []).forEach(row => {
+            // clear any previous visual mark for this row
             mark_row(frm, row, false);
             if (!row.batch_no) return;
 
             const qty = flt(row.qty) || 0;
             const lim = ensure_row_limit(row);
 
-            if (!lim) {
+            if (lim == null) { // null/undefined = missing (0 is valid)
                 violations.push({ idx: row.idx, item_code: row.item_code || '', batch_no: row.batch_no, qty, limit: '—', reason: 'Batch size not available' });
                 mark_row(frm, row, true);
                 return;
@@ -68,6 +71,7 @@ frappe.ui.form.on('Sales Invoice', {
             }
         });
 
+        // If violations exist AND no temporary override is set, show dialog and block save.
         if (violations.length && !allow_override) {
             const count = violations.length;
             const rows_html = violations.map(v =>
@@ -88,7 +92,7 @@ frappe.ui.form.on('Sales Invoice', {
                         <span class="badge">${count} ${count === 1 ? __("issue") : __("issues")}</span>
                     </div>
                     <div style="margin-bottom:8px; color:#5f2120;">
-                        ${__("Please adjust quantities or change batches before saving.")}
+                        ${__("Please adjust quantities or change batches before saving. You can choose Save Anyway to persist for this attempt; the check will still run next time.")}
                     </div>
                     <div class="grid-overflow" style="max-height:280px; overflow:auto; border:1px solid var(--border-color); border-radius:10px; background:#fff;">
                         <table class="table table-bordered table-sm" style="margin:0">
@@ -120,7 +124,7 @@ frappe.ui.form.on('Sales Invoice', {
                 }
             }
 
-            // Build dialog manually so we can add a "Save Anyway" button
+            // Build dialog with Save Anyway (client-only temporary override)
             const d = new frappe.ui.Dialog({
                 title: __('Batch Size Validation'),
                 indicator: 'red',
@@ -129,14 +133,17 @@ frappe.ui.form.on('Sales Invoice', {
             });
             d.$body.html(html);
 
-            // Add "Save Anyway" (danger) if user really wants to bypass
+            // Add "Save Anyway" (danger) which sets a client-only override and retries save
             const $footer = d.$wrapper.find('.modal-footer');
             const $saveAnyway = $(`<button class="btn btn-danger">${__('Save Anyway')}</button>`)
                 .on('click', async () => {
-                    // set override flag & attempt save again
-                    await frm.set_value('allow_batch_exceed', 1);
+                    // set client-only temporary override (non-persistent)
+                    frm._temp_allow_batch_exceed = true;
                     d.hide();
-                    // prevent loops: if validate runs again, it will skip due to flag
+
+                    // Now attempt to save again — validate will see the temp flag and allow this save.
+                    // After save completes, we clear the temp flag in frm.after_save below.
+                    // use frm.save() so the normal lifecycle runs
                     frm.save();
                 });
             $footer.prepend($saveAnyway);
@@ -149,9 +156,20 @@ frappe.ui.form.on('Sales Invoice', {
                 if (el) el.classList.add('error-dialog');
             }, 10);
 
-            // Block the original save with a throw (after showing dialog)
-            frappe.validated = false; // cancel current save without extra popup
-            throw new Error('Validation blocked'); // stop further execution
+            // Block the original save with frappe.validated = false and throw to stop further execution
+            frappe.validated = false;
+            throw new Error('Validation blocked by batch-size check');
+        }
+    },
+
+    // Clear the temporary override after save so subsequent saves always re-check
+    after_save: function(frm) {
+        if (frm._temp_allow_batch_exceed) {
+            // clear the client-only flag immediately in memory
+            frm._temp_allow_batch_exceed = false;
+
+            // Also ensure we don't persist any DB field accidentally:
+            // do NOT set a value on frm.doc.allow_batch_exceed here.
         }
     }
 });

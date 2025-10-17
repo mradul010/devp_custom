@@ -65,7 +65,11 @@ doc_events = {
         "validate": "devp_custom.api.validate_work_order_batch_size",
     },
     "Sales Invoice": {
-        "validate": "devp_custom.api.validate_sales_invoice_batch_size",
+        "autoname": "devp_custom.sales_invoice.autoname",
+        # keep your existing validate and add the manual-name validator
+        "validate": [
+            "devp_custom.api.validate_sales_invoice_batch_size"
+        ],
         "before_save": "devp_custom.api.apply_customer_item_names",
         # Availability control (affects stock only when update_stock=1)
         "before_submit": "devp_custom.api.validate_available_qty",
@@ -86,6 +90,7 @@ doc_events = {
         "before_submit": "devp_custom.api.validate_available_qty",
         "on_submit": "devp_custom.api.consume_available_qty",
         "on_cancel": "devp_custom.api.revert_available_qty",
+        
     },
 }
 
