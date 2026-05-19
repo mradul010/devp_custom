@@ -5,43 +5,33 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "item",
   "customer",
   "customer_group",
   "customer_item_name",
   "customer_description",
-  "effective_from",
-  "is_active",
+  "is_default",
   "priority"
  ],
  "fields": [
   {
-   "fieldname": "item",
-   "fieldtype": "Link",
-   "label": "Item",
-   "options": "Item",
-   "in_list_view": 1,
-   "reqd": 1
-  },
-  {
    "fieldname": "customer",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Customer",
-   "options": "Customer",
-   "in_list_view": 1
+   "options": "Customer"
   },
   {
    "fieldname": "customer_group",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Customer Group",
-   "options": "Customer Group",
-   "in_list_view": 1
+   "options": "Customer Group"
   },
   {
    "fieldname": "customer_item_name",
    "fieldtype": "Data",
-   "label": "Customer Item Name",
-   "in_list_view": 1
+   "in_list_view": 1,
+   "label": "Customer Item Name"
   },
   {
    "fieldname": "customer_description",
@@ -49,35 +39,24 @@
    "label": "Customer Description"
   },
   {
-   "fieldname": "effective_from",
-   "fieldtype": "Datetime",
-   "label": "Effective From"
-  },
-  {
-   "fieldname": "is_active",
+   "default": "0",
+   "fieldname": "is_default",
    "fieldtype": "Check",
-   "label": "Is Active",
-   "default": "1"
+   "in_list_view": 1,
+   "label": "Is Default"
   },
   {
+   "description": "Lower number = higher priority",
    "fieldname": "priority",
    "fieldtype": "Int",
-   "label": "Priority",
-   "description": "Lower number = higher priority"
+   "in_list_view": 1,
+   "label": "Priority"
   }
  ],
- "istable": 0,
+ "istable": 1,
  "module": "Devp Custom",
- "name": "Item Customer Mapping",
- "permissions": [
-  {
-   "role": "System Manager",
-   "read": 1,
-   "write": 1,
-   "create": 1,
-   "delete": 1
-  }
- ],
+ "name": "Item Customer Info",
+ "permissions": [],
  "sort_field": "modified",
  "sort_order": "DESC"
 }
