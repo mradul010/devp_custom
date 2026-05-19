@@ -199,6 +199,12 @@ def assign_item_code_before_insert(doc, method=None):
 # ---------------------------------------------------------------------
 @frappe.whitelist()
 def get_last_item_prices(item_code, customer=None, limit=5, include_other_customers=False):
+    """
+    Fetch last selling prices for item_code from submitted documents only (docstatus=1).
+    Priority: Sales Invoice → Delivery Note → Sales Order.
+    include_other_customers=False → filter by customer (customer-specific).
+    include_other_customers=True  → no customer filter at all (all-customers fallback).
+    """
     if not item_code:
         return []
 
@@ -206,42 +212,131 @@ def get_last_item_prices(item_code, customer=None, limit=5, include_other_custom
     customer = (customer or "").strip() or None
     include_other = str(include_other_customers).lower() in ("1", "true", "yes")
 
-    if not frappe.has_permission("Sales Invoice", ptype="read"):
-        frappe.throw(_("Not permitted"), frappe.PermissionError)
+    try:
+        if not frappe.has_permission("Sales Invoice", ptype="read"):
+            return []
+    except Exception:
+        pass
 
-    filters = ["sii.item_code = %s", "si.docstatus = 1"]
+    results = []
+
+    # Priority 1: Sales Invoice
+    results.extend(_price_history_from_si(item_code, customer, include_other, limit))
+
+    # Priority 2: Delivery Note
+    remaining = limit - len(results)
+    if remaining > 0:
+        results.extend(_price_history_from_dn(item_code, customer, include_other, remaining))
+
+    # Priority 3: Sales Order
+    remaining = limit - len(results)
+    if remaining > 0:
+        results.extend(_price_history_from_so(item_code, customer, include_other, remaining))
+
+    return results
+
+
+def _build_customer_clause(customer, include_other, alias):
+    """
+    customer-specific (include_other=False): WHERE alias.customer = %s
+    all-customers fallback (include_other=True): no clause
+    """
+    if customer and not include_other:
+        return f"{alias}.customer = %s", [customer]
+    return None, []
+
+
+def _price_history_from_si(item_code, customer, include_other, limit):
+    cust_clause, cust_params = _build_customer_clause(customer, include_other, "si")
+    where = "sii.item_code = %s AND si.docstatus = 1"
     params = [item_code]
-
-    if customer:
-        if include_other:
-            filters.append("si.customer != %s")
-            params.append(customer)
-        else:
-            filters.append("si.customer = %s")
-            params.append(customer)
-
-    where = " AND ".join(filters)
+    if cust_clause:
+        where += f" AND {cust_clause}"
+        params.extend(cust_params)
     rows = frappe.db.sql(
         f"""
-        SELECT si.name AS invoice, si.posting_date AS posting_date,
-               sii.rate AS rate, si.customer AS customer
+        SELECT si.name AS document, 'Sales Invoice' AS doc_type,
+               si.posting_date, si.customer,
+               sii.qty, sii.rate, sii.amount,
+               COALESCE(si.currency, '') AS currency
         FROM `tabSales Invoice Item` sii
         JOIN `tabSales Invoice` si ON si.name = sii.parent
         WHERE {where}
-        ORDER BY si.posting_date DESC, si.modified DESC
+        ORDER BY si.posting_date DESC, si.creation DESC
         LIMIT %s
         """,
         tuple(params + [limit]),
         as_dict=1,
     )
+    return _normalize_price_rows(rows)
 
+
+def _price_history_from_dn(item_code, customer, include_other, limit):
+    cust_clause, cust_params = _build_customer_clause(customer, include_other, "dn")
+    where = "dni.item_code = %s AND dn.docstatus = 1"
+    params = [item_code]
+    if cust_clause:
+        where += f" AND {cust_clause}"
+        params.extend(cust_params)
+    rows = frappe.db.sql(
+        f"""
+        SELECT dn.name AS document, 'Delivery Note' AS doc_type,
+               dn.posting_date, dn.customer,
+               dni.qty, dni.rate, dni.amount,
+               COALESCE(dn.currency, '') AS currency
+        FROM `tabDelivery Note Item` dni
+        JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+        WHERE {where}
+        ORDER BY dn.posting_date DESC, dn.creation DESC
+        LIMIT %s
+        """,
+        tuple(params + [limit]),
+        as_dict=1,
+    )
+    return _normalize_price_rows(rows)
+
+
+def _price_history_from_so(item_code, customer, include_other, limit):
+    cust_clause, cust_params = _build_customer_clause(customer, include_other, "so")
+    where = "soi.item_code = %s AND so.docstatus = 1"
+    params = [item_code]
+    if cust_clause:
+        where += f" AND {cust_clause}"
+        params.extend(cust_params)
+    rows = frappe.db.sql(
+        f"""
+        SELECT so.name AS document, 'Sales Order' AS doc_type,
+               so.transaction_date AS posting_date, so.customer,
+               soi.qty, soi.rate, soi.amount,
+               COALESCE(so.currency, '') AS currency
+        FROM `tabSales Order Item` soi
+        JOIN `tabSales Order` so ON so.name = soi.parent
+        WHERE {where}
+        ORDER BY so.transaction_date DESC, so.creation DESC
+        LIMIT %s
+        """,
+        tuple(params + [limit]),
+        as_dict=1,
+    )
+    return _normalize_price_rows(rows)
+
+
+def _normalize_price_rows(rows):
     result = []
     for r in rows:
+        pd = r.get("posting_date")
         result.append({
-            "invoice": r.get("invoice"),
-            "posting_date": r.get("posting_date").strftime("%Y-%m-%d") if r.get("posting_date") else None,
-            "rate": float(r.get("rate")) if r.get("rate") is not None else None,
-            "customer": r.get("customer") or "",
+            "document":     r.get("document") or "",
+            "doc_type":     r.get("doc_type") or "",
+            "posting_date": pd.strftime("%Y-%m-%d") if pd else "",
+            "customer":     r.get("customer") or "",
+            "qty":          float(r.get("qty") or 0),
+            "rate":         float(r.get("rate") or 0),
+            "amount":       float(r.get("amount") or 0),
+            "currency":     r.get("currency") or "",
+            # backward-compat keys (older frontend reads r.invoice / r.order)
+            "invoice":      r.get("document") or "",
+            "order":        r.get("document") or "",
         })
     return result
 

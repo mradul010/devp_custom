@@ -50,11 +50,10 @@ frappe.ui.form.on('Quotation Item', {
                     if (other.length) {
                         openQuotationPriceDialog(frm, item, other, false, true, null);
                     } else {
-                        frappe.msgprint({
-                            title: 'No history',
-                            message: `No sales history found for ${item.item_code} (neither for this customer nor other customers).`,
+                        frappe.show_alert({
+                            message: __('No previous selling price found for {0}.', [item.item_code]),
                             indicator: 'orange'
-                        });
+                        }, 5);
                     }
                 }).catch(function(err2) {
                     console.error('Error fetching other-party prices', err2);

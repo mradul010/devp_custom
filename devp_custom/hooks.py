@@ -25,7 +25,7 @@ fixtures = [
 doctype_js = {
     "Item": "public/js/item_client.js",
     "Sales Order": [
-        "public/js/sales_order_item.js",
+        "public/js/sales_invoice_item.js",   # unified last-price popup (handles SO Item)
         "public/js/mapping_on_rate_change.js",
     ],
     "Quotation": [
@@ -38,12 +38,10 @@ doctype_js = {
         "public/js/sales_invoice_batch_size.js",
         "public/js/mapping_on_rate_change.js",
     ],
+    "Delivery Note": [
+        "public/js/sales_invoice_item.js",   # unified last-price popup (handles DN Item)
+    ],
 }
-
-# Also include core JS globally if you need it on every desk page
-app_include_js = [
-    "public/js/sales_invoice_item.js",
-]
 
 # ---------------------------------------------------------------------
 # Server Hooks
