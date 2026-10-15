@@ -523,8 +523,8 @@ def apply_customer_item_names(doc, method=None):
         if res.get("customer_description"):
             try: d.customer_description = res.get("customer_description")
             except Exception: pass
-            try: d.description = res.get("customer_description")
-            except Exception: pass
+            # try: d.description = res.get("customer_description")
+            # except Exception: pass
 
 # ---------------------------------------------------------------------
 # Batch availability control (your new requirement)

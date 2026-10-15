@@ -132,7 +132,7 @@ def apply_customer_item_names(doc, method=None):
                 d.customer_description = res.get("customer_description")
             except Exception:
                 pass
-            try:
-                d.description = res.get("customer_description")
-            except Exception:
-                pass
+            # try:
+            #     d.description = res.get("customer_description")
+            # except Exception:
+            #     pass

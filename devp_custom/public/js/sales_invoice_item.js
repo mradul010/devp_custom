@@ -171,3 +171,41 @@
     }
 
 })();
+
+
+
+frappe.ui.form.on("Sales Invoice", {
+    setup(frm) {
+        frm._customer_desc_cache = {};
+    },
+
+    onload(frm) {
+        frm._customer_desc_cache = {};
+    },
+
+    before_save(frm) {
+        const cache = frm._customer_desc_cache || {};
+
+        (frm.doc.items || []).forEach(row => {
+            if (Object.prototype.hasOwnProperty.call(
+                cache, row.name
+            )) {
+                row.customer_description = cache[row.name];
+            }
+        });
+    }
+});
+
+frappe.ui.form.on("Sales Invoice Item", {
+    customer_description(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+
+        frm._customer_desc_cache =
+            frm._customer_desc_cache || {};
+
+        frm._customer_desc_cache[cdn] =
+            row.customer_description;
+
+        frm.dirty();
+    }
+});
