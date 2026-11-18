@@ -8,6 +8,8 @@ app_description = "Devp Custom"
 app_email = "mradulmishra010@gmail.com"
 app_license = "mit"
 
+after_sync = after_migrate = "devp_custom.submitted_sales_setup.install"
+
 fixtures = [
     # ship your custom doctypes
     {"dt": "DocType", "filters": [["name", "in", ["Item Customer Info", "Item Customer Mapping"]]]},
@@ -34,19 +36,26 @@ doctype_js = {
     ],
     "Sales Invoice": [
         "public/js/sales_invoice_item.js",
-        "public/js/sales_invoice_batch_dates.js",
+        "public/js/submitted_sales.js",
+        "public/js/submitted_payment_schedule.js",
         "public/js/sales_invoice_batch_size.js",
         "public/js/mapping_on_rate_change.js",
     ],
     "Delivery Note": [
+        "public/js/submitted_sales.js",
         "public/js/sales_invoice_item.js",   # unified last-price popup (handles DN Item)
     ],
 }
+
+extend_doctype_class = dict.fromkeys(
+    ("Sales Invoice", "Delivery Note"), "devp_custom.submitted_sales.SubmittedTransport"
+)
 
 # ---------------------------------------------------------------------
 # Server Hooks
 # ---------------------------------------------------------------------
 doc_events = {
+    "*": {"before_update_after_submit": "devp_custom.submitted_payment_schedule.preserve_other_payment_schedules"},
     # Item code auto-generation
     "Item": {
         "before_insert": "devp_custom.api.assign_item_code_before_insert",
@@ -63,14 +72,29 @@ doc_events = {
         "validate": "devp_custom.api.validate_work_order_batch_size",
     },
     "Sales Invoice": {
+        "onload": [
+            "devp_custom.submitted_sales.load_batch_allocations",
+            "devp_custom.submitted_payment_schedule.load_payment_schedule_state",
+        ],
+        "before_print": "devp_custom.submitted_sales.show_posted_batches_in_print",
+        "before_update_after_submit": [
+            "devp_custom.submitted_sales.validate_submitted_edit",
+            "devp_custom.submitted_payment_schedule.validate_payment_schedule_update",
+        ],
         "autoname": "devp_custom.sales_invoice.autoname",
         # keep your existing validate and add the manual-name validator
         "validate": [
             "devp_custom.api.validate_sales_invoice_batch_size"
         ],
-        "before_save": "devp_custom.api.apply_customer_item_names",
+        "before_save": [
+            "devp_custom.api.apply_customer_item_names",
+            "devp_custom.submitted_sales.set_draft_batch_dates",
+        ],
         # Availability control (affects stock only when update_stock=1)
-        "before_submit": "devp_custom.api.validate_available_qty",
+        "before_submit": [
+            "devp_custom.api.validate_available_qty",
+            "devp_custom.submitted_sales.set_draft_batch_dates",
+        ],
         "on_submit": "devp_custom.api.consume_available_qty",
         "on_cancel": "devp_custom.api.revert_available_qty",
     },
@@ -85,7 +109,14 @@ doc_events = {
 
     # Delivery Note moves stock, so always apply availability control
     "Delivery Note": {
-        "before_submit": "devp_custom.api.validate_available_qty",
+        "before_save": "devp_custom.submitted_sales.set_draft_batch_dates",
+        "onload": "devp_custom.submitted_sales.load_batch_allocations",
+        "before_print": "devp_custom.submitted_sales.show_posted_batches_in_print",
+        "before_update_after_submit": "devp_custom.submitted_sales.validate_submitted_edit",
+        "before_submit": [
+            "devp_custom.api.validate_available_qty",
+            "devp_custom.submitted_sales.set_draft_batch_dates",
+        ],
         "on_submit": "devp_custom.api.consume_available_qty",
         "on_cancel": "devp_custom.api.revert_available_qty",
         
